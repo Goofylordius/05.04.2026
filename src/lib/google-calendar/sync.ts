@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 
 import type { calendar_v3 } from "googleapis";
 
-import { appEnv, isGoogleCalendarConfigured } from "@/lib/env";
+import {
+  appEnv,
+  hasServiceRoleConfig,
+  isGoogleCalendarConfigured,
+} from "@/lib/env";
 import { createGoogleCalendarClient } from "@/lib/google-calendar/client";
 import { createGoogleOAuthClient } from "@/lib/google-calendar/oauth";
 import { logAuditEvent } from "@/lib/audit/log";
@@ -15,6 +19,15 @@ type CalendarConnectionRow = {
   user_id: string;
   encrypted_refresh_token: string;
   sync_token: string | null;
+};
+
+type AppointmentRow = {
+  id: string;
+  title: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  location: string | null;
+  notes: string | null;
 };
 
 function mapGoogleEvent(
@@ -238,4 +251,87 @@ export async function renewExpiringCalendarWatches() {
   );
 
   return { renewed: results.filter(Boolean).length };
+}
+
+export async function pushAppointmentToGoogle(
+  userId: string,
+  appointmentId: string,
+) {
+  if (!isGoogleCalendarConfigured() || !hasServiceRoleConfig()) {
+    return {
+      synced: false,
+      reason:
+        "Google-Kalender ist fuer Push-Sync nicht vollstaendig konfiguriert.",
+    };
+  }
+
+  const supabase = createServiceSupabaseClient();
+  const [{ data: connection }, { data: appointment }] = await Promise.all([
+    supabase
+      .from("calendar_connections")
+      .select("encrypted_refresh_token")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("appointments")
+      .select("id, title, starts_at, ends_at, location, notes")
+      .eq("id", appointmentId)
+      .eq("owner_user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  if (!connection?.encrypted_refresh_token) {
+    await supabase
+      .from("appointments")
+      .update({ sync_state: "disconnected" })
+      .eq("id", appointmentId);
+
+    return {
+      synced: false,
+      reason: "Keine aktive Google-Verbindung vorhanden.",
+    };
+  }
+
+  if (!appointment) {
+    throw new Error("Termin fuer Google-Sync nicht gefunden.");
+  }
+
+  const { calendar } = createGoogleCalendarClient(
+    String(connection.encrypted_refresh_token),
+  );
+  const appointmentRow = appointment as AppointmentRow;
+  const response = await calendar.events.insert({
+    calendarId: "primary",
+    requestBody: {
+      summary: appointmentRow.title,
+      location: appointmentRow.location ?? undefined,
+      description: appointmentRow.notes ?? undefined,
+      start: { dateTime: appointmentRow.starts_at ?? undefined },
+      end: { dateTime: appointmentRow.ends_at ?? undefined },
+    },
+  });
+
+  await supabase
+    .from("appointments")
+    .update({
+      google_event_id: response.data.id ?? null,
+      sync_state: "synced",
+      external_updated_at: response.data.updated ?? new Date().toISOString(),
+    })
+    .eq("id", appointmentId);
+
+  await logAuditEvent({
+    actorUserId: userId,
+    entityType: "calendar",
+    entityId: appointmentId,
+    action: "calendar.event_pushed",
+    diff: {
+      googleEventId: response.data.id ?? null,
+    },
+  });
+
+  return {
+    synced: true,
+    googleEventId: response.data.id ?? undefined,
+  };
 }

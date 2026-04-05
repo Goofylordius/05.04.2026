@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  Building2,
   CalendarDays,
   CircleDollarSign,
   FileText,
@@ -45,8 +46,13 @@ const quickLinks = [
   },
   {
     label: "Dokumente",
-    href: "/documents/document-1",
+    href: "/documents",
     icon: FileText,
+  },
+  {
+    label: "Unternehmen",
+    href: "/settings/company",
+    icon: Building2,
   },
   {
     label: "Sicherheit",

@@ -3,6 +3,7 @@ import {
   Building2,
   CalendarDays,
   CircleDollarSign,
+  FileText,
   LayoutDashboard,
   ShieldCheck,
   Users,
@@ -44,9 +45,15 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     title: "Dokumente",
-    href: "/documents/document-1",
-    icon: Building2,
+    href: "/documents",
+    icon: FileText,
     permission: "documents.view",
+  },
+  {
+    title: "Firma",
+    href: "/settings/company",
+    icon: Building2,
+    permission: "company.manage",
   },
   {
     title: "Sicherheit",

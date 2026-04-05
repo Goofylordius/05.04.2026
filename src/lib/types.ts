@@ -102,6 +102,7 @@ export type Deal = {
   valueCents: number;
   probability: number;
   expectedCloseDate: string;
+  notes?: string;
   updatedAt: string;
 };
 

@@ -7,7 +7,14 @@ import {
   deals,
   appointments,
   dashboardMetrics,
+  documents,
+  getAppointmentsByCustomerId,
+  getContactsByCustomerId,
+  getCustomerById,
+  getDealById,
+  getDealsByCustomerId,
   getDocumentSnapshot,
+  getDocumentsByCustomerId,
 } from "@/lib/demo-data";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -104,6 +111,7 @@ function mapDeal(row: LiveRow): Deal {
     valueCents: Number(row.value_cents ?? 0),
     probability: Number(row.probability ?? 0),
     expectedCloseDate: String(row.expected_close_date ?? ""),
+    notes: row.notes ? String(row.notes) : undefined,
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
   };
 }
@@ -175,6 +183,47 @@ function mapDocumentItem(row: LiveRow): DocumentLineItem {
     lineTaxCents: Number(row.line_tax_cents ?? 0),
     lineGrossCents: Number(row.line_gross_cents ?? 0),
   };
+}
+
+function mapDocument(row: LiveRow) {
+  return {
+    id: String(row.id),
+    kind:
+      row.kind === "quote" || row.kind === "credit_note" ? row.kind : "invoice",
+    status:
+      row.status === "draft" ||
+      row.status === "sent" ||
+      row.status === "accepted" ||
+      row.status === "paid" ||
+      row.status === "cancelled" ||
+      row.status === "overdue"
+        ? row.status
+        : "draft",
+    customerId: String(row.customer_id),
+    sequenceNo: Number(row.sequence_no ?? 0),
+    documentNo: String(row.document_no ?? ""),
+    issueDate: String(row.issue_date ?? ""),
+    serviceDate: row.service_date ? String(row.service_date) : undefined,
+    dueDate: row.due_date ? String(row.due_date) : undefined,
+    currency: String(row.currency ?? "EUR"),
+    taxMode: String(row.tax_mode ?? "standard"),
+    subtotalNetCents: Number(row.subtotal_net_cents ?? 0),
+    taxTotalCents: Number(row.tax_total_cents ?? 0),
+    totalGrossCents: Number(row.total_gross_cents ?? 0),
+    paymentTerms: String(row.payment_terms ?? ""),
+    legalFooter: String(row.legal_footer ?? ""),
+    einvoiceProfile: String(row.einvoice_profile ?? ""),
+    einvoicePayload:
+      typeof row.einvoice_payload === "object" && row.einvoice_payload !== null
+        ? (row.einvoice_payload as Record<string, string>)
+        : {},
+    pdfPath: row.pdf_path ? String(row.pdf_path) : undefined,
+    createdBy: String(row.created_by ?? ""),
+    updatedBy: String(row.updated_by ?? ""),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    updatedAt: String(row.updated_at ?? new Date().toISOString()),
+    versions: [],
+  } satisfies DocumentSnapshot["document"];
 }
 
 export async function loadCompanyProfile() {
@@ -251,6 +300,26 @@ export async function loadDeals() {
   }, deals);
 }
 
+export async function loadDealById(dealId: string) {
+  return withLiveFallback(
+    async () => {
+      const supabase = await createServerSupabaseClient();
+      const { data, error } = await supabase
+        .from("deals")
+        .select("*")
+        .eq("id", dealId)
+        .maybeSingle();
+
+      if (error || !data) {
+        throw error ?? new Error("Deal not found.");
+      }
+
+      return mapDeal(data as LiveRow);
+    },
+    getDealById(dealId) ?? null,
+  );
+}
+
 export async function loadAppointments() {
   return withLiveFallback(async () => {
     const supabase = await createServerSupabaseClient();
@@ -282,6 +351,26 @@ export async function loadAuditLogs() {
 
     return (data as LiveRow[]).map(mapAuditLog);
   }, auditLogs);
+}
+
+export async function loadCustomerById(customerId: string) {
+  return withLiveFallback(
+    async () => {
+      const supabase = await createServerSupabaseClient();
+      const { data, error } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", customerId)
+        .maybeSingle();
+
+      if (error || !data) {
+        throw error ?? new Error("Customer not found.");
+      }
+
+      return mapCustomer(data as LiveRow);
+    },
+    getCustomerById(customerId) ?? null,
+  );
 }
 
 export async function loadCalendarConnection(
@@ -318,6 +407,22 @@ export async function loadCalendarConnection(
         : undefined,
     } satisfies CalendarConnection;
   }, calendarConnection);
+}
+
+export async function loadDocuments() {
+  return withLiveFallback(async () => {
+    const supabase = await createServerSupabaseClient();
+    const { data, error } = await supabase
+      .from("documents")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (error || !data) {
+      throw error ?? new Error("Unable to load documents.");
+    }
+
+    return (data as LiveRow[]).map(mapDocument);
+  }, documents);
 }
 
 export async function loadDocumentSnapshot(
@@ -367,50 +472,7 @@ export async function loadDocumentSnapshot(
       company,
       customer: mapCustomer(customerRow as LiveRow),
       document: {
-        id: String(documentRow.id),
-        kind:
-          documentRow.kind === "quote" || documentRow.kind === "credit_note"
-            ? documentRow.kind
-            : "invoice",
-        status:
-          documentRow.status === "draft" ||
-          documentRow.status === "sent" ||
-          documentRow.status === "accepted" ||
-          documentRow.status === "paid" ||
-          documentRow.status === "cancelled" ||
-          documentRow.status === "overdue"
-            ? documentRow.status
-            : "draft",
-        customerId: String(documentRow.customer_id),
-        sequenceNo: Number(documentRow.sequence_no ?? 0),
-        documentNo: String(documentRow.document_no ?? ""),
-        issueDate: String(documentRow.issue_date ?? ""),
-        serviceDate: documentRow.service_date
-          ? String(documentRow.service_date)
-          : undefined,
-        dueDate: documentRow.due_date
-          ? String(documentRow.due_date)
-          : undefined,
-        currency: String(documentRow.currency ?? "EUR"),
-        taxMode: String(documentRow.tax_mode ?? "standard"),
-        subtotalNetCents: Number(documentRow.subtotal_net_cents ?? 0),
-        taxTotalCents: Number(documentRow.tax_total_cents ?? 0),
-        totalGrossCents: Number(documentRow.total_gross_cents ?? 0),
-        paymentTerms: String(documentRow.payment_terms ?? ""),
-        legalFooter: String(documentRow.legal_footer ?? ""),
-        einvoiceProfile: String(documentRow.einvoice_profile ?? ""),
-        einvoicePayload:
-          typeof documentRow.einvoice_payload === "object" &&
-          documentRow.einvoice_payload !== null
-            ? (documentRow.einvoice_payload as Record<string, string>)
-            : {},
-        pdfPath: documentRow.pdf_path
-          ? String(documentRow.pdf_path)
-          : undefined,
-        createdBy: String(documentRow.created_by ?? ""),
-        updatedBy: String(documentRow.updated_by ?? ""),
-        createdAt: String(documentRow.created_at ?? new Date().toISOString()),
-        updatedAt: String(documentRow.updated_at ?? new Date().toISOString()),
+        ...mapDocument(documentRow as LiveRow),
         versions: ((versionRows ?? []) as LiveRow[]).map((row) => ({
           id: String(row.id),
           storagePath: String(row.storage_path ?? ""),
@@ -426,4 +488,47 @@ export async function loadDocumentSnapshot(
 
 export async function loadDashboardMetrics(): Promise<DashboardMetric[]> {
   return dashboardMetrics;
+}
+
+export async function loadCustomerWorkspace(customerId: string) {
+  return withLiveFallback(
+    async () => {
+      const [
+        customer,
+        customerContacts,
+        customerDeals,
+        customerAppointments,
+        customerDocuments,
+      ] = await Promise.all([
+        loadCustomerById(customerId),
+        loadContacts(customerId),
+        loadDeals(),
+        loadAppointments(),
+        loadDocuments(),
+      ]);
+
+      if (!customer) {
+        throw new Error("Customer not found.");
+      }
+
+      return {
+        customer,
+        contacts: customerContacts,
+        deals: customerDeals.filter((deal) => deal.customerId === customerId),
+        appointments: customerAppointments.filter(
+          (appointment) => appointment.customerId === customerId,
+        ),
+        documents: customerDocuments.filter(
+          (document) => document.customerId === customerId,
+        ),
+      };
+    },
+    {
+      customer: getCustomerById(customerId) ?? null,
+      contacts: getContactsByCustomerId(customerId),
+      deals: getDealsByCustomerId(customerId),
+      appointments: getAppointmentsByCustomerId(customerId),
+      documents: getDocumentsByCustomerId(customerId),
+    },
+  );
 }

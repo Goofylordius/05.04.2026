@@ -1,11 +1,17 @@
 import { notFound, redirect } from "next/navigation";
 
-import { generateDocumentPdf } from "@/actions/documents";
+import {
+  generateDocumentPdf,
+  updateDocumentStatusAction,
+} from "@/actions/documents";
 import { DocumentSummary } from "@/components/documents/document-summary";
+import { StatusBanner } from "@/components/status-banner";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataGrid } from "@/components/data-grid/data-grid";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { requireSessionContext } from "@/lib/auth/session";
 import { loadDocumentSnapshot } from "@/lib/data";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -19,7 +25,8 @@ export default async function DocumentPage({
   params,
   searchParams,
 }: DocumentPageProps) {
-  await requireSessionContext("documents.view");
+  const session = await requireSessionContext("documents.view");
+  const canManage = session.permissions.includes("documents.manage");
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const snapshot = await loadDocumentSnapshot(id);
 
@@ -41,17 +48,22 @@ export default async function DocumentPage({
         eyebrow="Documents"
         title={snapshot.document.documentNo}
         actions={
-          <form action={regenerateAction}>
-            <Button type="submit">PDF neu generieren</Button>
-          </form>
+          canManage ? (
+            <form action={regenerateAction}>
+              <Button type="submit">PDF neu generieren</Button>
+            </form>
+          ) : null
         }
       />
 
-      {typeof query.generated === "string" ? (
-        <div className="border-primary/40 bg-primary/10 text-foreground rounded-2xl border p-3 text-sm">
-          PDF-Version wurde erzeugt und protokolliert.
-        </div>
-      ) : null}
+      <StatusBanner
+        error={query.error}
+        message={
+          typeof query.generated === "string"
+            ? "PDF-Version wurde erzeugt und protokolliert."
+            : query.message
+        }
+      />
 
       <DocumentSummary snapshot={snapshot} />
 
@@ -100,6 +112,46 @@ export default async function DocumentPage({
         </Card>
 
         <div className="space-y-4">
+          {canManage ? (
+            <Card className="surface-panel border-border/70 border">
+              <CardHeader>
+                <CardTitle>Status steuern</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form action={updateDocumentStatusAction} className="space-y-4">
+                  <input
+                    name="documentId"
+                    type="hidden"
+                    value={snapshot.document.id}
+                  />
+                  <input
+                    name="redirectTo"
+                    type="hidden"
+                    value={`/documents/${snapshot.document.id}`}
+                  />
+                  <div className="space-y-2">
+                    <Label htmlFor="status">Dokumentstatus</Label>
+                    <NativeSelect
+                      defaultValue={snapshot.document.status}
+                      id="status"
+                      name="status"
+                    >
+                      <option value="draft">Entwurf</option>
+                      <option value="sent">Versendet</option>
+                      <option value="accepted">Akzeptiert</option>
+                      <option value="paid">Bezahlt</option>
+                      <option value="cancelled">Storniert</option>
+                      <option value="overdue">Ueberfaellig</option>
+                    </NativeSelect>
+                  </div>
+                  <Button className="w-full" type="submit" variant="outline">
+                    Status aktualisieren
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card className="surface-panel border-border/70 border">
             <CardHeader>
               <CardTitle>Compliance Check</CardTitle>

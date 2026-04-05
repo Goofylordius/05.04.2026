@@ -53,4 +53,4 @@ npx supabase db reset
 - The schema, RLS policies, custom access-token hook, and storage policies live in [`supabase/migrations/202604050001_initial_schema.sql`](/c:/Users/Malte/Desktop/2026/supabase/migrations/202604050001_initial_schema.sql).
 - Google Calendar sync expects service-role access plus `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_CALENDAR_WEBHOOK_SECRET`.
 - The document module stores EN 16931 placeholder payloads now; ZUGFeRD/XRechnung XML export is intentionally left for a later phase.
-"# 05.04.2026" 
+  "# 05.04.2026"

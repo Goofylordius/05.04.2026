@@ -1,40 +1,138 @@
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+import Link from "next/link";
+
+import { StatusBanner } from "@/components/status-banner";
 import { DataGrid } from "@/components/data-grid/data-grid";
 import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSessionContext } from "@/lib/auth/session";
-import { loadContacts, loadCustomers } from "@/lib/data";
+import { loadCustomers, loadDeals, loadDocuments } from "@/lib/data";
+import { formatCurrency } from "@/lib/format";
 
-export default async function CustomersPage() {
-  await requireSessionContext("crm.view");
-  const [customerRows, contactRows] = await Promise.all([
+type CustomersPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function CustomersPage({
+  searchParams,
+}: CustomersPageProps) {
+  const session = await requireSessionContext("crm.view");
+  const canManage = session.permissions.includes("crm.manage");
+  const [customerRows, dealRows, documentRows, query] = await Promise.all([
     loadCustomers(),
-    loadContacts(),
+    loadDeals(),
+    loadDocuments(),
+    searchParams,
   ]);
-  const selectedCustomer = customerRows[0];
-  const selectedContacts = contactRows.filter(
-    (contact) => contact.customerId === selectedCustomer?.id,
+
+  const accountRows = customerRows
+    .map((customer) => {
+      const customerDeals = dealRows.filter(
+        (deal) => deal.customerId === customer.id,
+      );
+      const openDocuments = documentRows.filter(
+        (document) =>
+          document.customerId === customer.id &&
+          document.status !== "paid" &&
+          document.status !== "cancelled",
+      );
+
+      return {
+        ...customer,
+        pipelineCents: customerDeals.reduce(
+          (sum, deal) => sum + deal.valueCents,
+          0,
+        ),
+        activeDeals: customerDeals.filter(
+          (deal) => deal.stage !== "won" && deal.stage !== "lost",
+        ).length,
+        openDocuments: openDocuments.length,
+      };
+    })
+    .sort((left, right) => right.pipelineCents - left.pipelineCents);
+
+  const averageHealth = Math.round(
+    accountRows.reduce((sum, customer) => sum + customer.healthScore, 0) /
+      Math.max(accountRows.length, 1),
   );
 
   return (
     <div className="space-y-6">
       <PageHeader
-        description="Split-Pane Ansicht fuer Account-Management, Ansprechpartner und kaufmaennische Stammdaten."
+        description="Operative Account-Ansicht mit Pipeline, offenen Dokumenten und direktem Drill-down in Kundenakten."
         eyebrow="CRM"
         title="Kunden"
+        actions={
+          canManage ? (
+            <Button render={<Link href="/crm/customers/new" />}>
+              Neuer Kunde
+            </Button>
+          ) : undefined
+        }
       />
 
-      <ResizablePanelGroup
-        className="border-border/70 min-h-[680px] overflow-hidden rounded-[28px] border"
-        orientation="horizontal"
-      >
-        <ResizablePanel defaultSize={44} minSize={34}>
-          <div className="h-full p-4">
+      <StatusBanner error={query.error} message={query.message} />
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="surface-panel border-border/70 border">
+          <CardContent className="space-y-2 py-6">
+            <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
+              Kundenbestand
+            </p>
+            <p className="text-foreground text-3xl font-semibold">
+              {accountRows.length}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="surface-panel border-border/70 border">
+          <CardContent className="space-y-2 py-6">
+            <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
+              Durchschnitt Health
+            </p>
+            <p className="text-foreground text-3xl font-semibold">
+              {averageHealth}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="surface-panel border-border/70 border">
+          <CardContent className="space-y-2 py-6">
+            <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
+              Aktive Deals
+            </p>
+            <p className="text-foreground text-3xl font-semibold">
+              {
+                dealRows.filter(
+                  (deal) => deal.stage !== "won" && deal.stage !== "lost",
+                ).length
+              }
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="surface-panel border-border/70 border">
+          <CardContent className="space-y-2 py-6">
+            <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
+              Offene Dokumente
+            </p>
+            <p className="text-foreground text-3xl font-semibold">
+              {
+                documentRows.filter(
+                  (document) =>
+                    document.status !== "paid" &&
+                    document.status !== "cancelled",
+                ).length
+              }
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_420px]">
+        <Card className="surface-panel border-border/70 border">
+          <CardHeader>
+            <CardTitle>Kundenbestand</CardTitle>
+          </CardHeader>
+          <CardContent>
             <DataGrid
               columns={[
                 {
@@ -42,9 +140,12 @@ export default async function CustomersPage() {
                   header: "Konto",
                   cell: (row) => (
                     <div>
-                      <div className="text-foreground font-medium">
+                      <Link
+                        className="text-foreground font-medium hover:underline"
+                        href={`/crm/customers/${row.id}`}
+                      >
                         {row.companyName}
-                      </div>
+                      </Link>
                       <div className="text-muted-foreground text-xs">
                         {row.industry}
                       </div>
@@ -57,7 +158,23 @@ export default async function CustomersPage() {
                   cell: (row) => (
                     <div className="text-muted-foreground text-sm">
                       {row.email}
+                      <div className="text-xs">{row.phone}</div>
                     </div>
+                  ),
+                },
+                {
+                  key: "pipeline",
+                  header: "Pipeline",
+                  cell: (row) => formatCurrency(row.pipelineCents),
+                },
+                {
+                  key: "open",
+                  header: "Open",
+                  className: "text-right",
+                  cell: (row) => (
+                    <span className="text-foreground font-medium">
+                      {row.activeDeals} / {row.openDocuments}
+                    </span>
                   ),
                 },
                 {
@@ -75,95 +192,78 @@ export default async function CustomersPage() {
                 },
               ]}
               emptyState="Keine Kunden gefunden."
-              rows={customerRows}
+              getRowKey={(row) => row.id}
+              rows={accountRows}
             />
-          </div>
-        </ResizablePanel>
-        <ResizableHandle className="bg-border/70" withHandle />
-        <ResizablePanel defaultSize={56}>
-          <div className="grid h-full gap-4 p-4 lg:grid-cols-2">
-            <Card className="surface-panel border-border/70 border">
-              <CardHeader>
-                <CardTitle>{selectedCustomer?.companyName}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Branche</span>
-                  <span>{selectedCustomer?.industry}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">USt-IdNr.</span>
-                  <span>{selectedCustomer?.vatId ?? "Nicht gepflegt"}</span>
-                </div>
-                <div className="border-border/70 bg-background/25 text-muted-foreground rounded-2xl border p-3">
-                  {selectedCustomer?.billingAddress.line1}
-                  <br />
-                  {selectedCustomer?.billingAddress.postalCode}{" "}
-                  {selectedCustomer?.billingAddress.city}
-                </div>
-              </CardContent>
-            </Card>
+          </CardContent>
+        </Card>
 
-            <Card className="surface-panel border-border/70 border">
-              <CardHeader>
-                <CardTitle>Ansprechpartner</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {selectedContacts.map((contact) => (
-                  <div
-                    className="border-border/70 bg-background/25 rounded-2xl border p-3"
-                    key={contact.id}
-                  >
-                    <div className="text-foreground font-medium">
-                      {contact.firstName} {contact.lastName}
+        <div className="space-y-4">
+          <Card className="surface-panel border-border/70 border">
+            <CardHeader>
+              <CardTitle>Key Accounts</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {accountRows.slice(0, 4).map((customer) => (
+                <div
+                  className="border-border/70 bg-background/25 rounded-2xl border p-3"
+                  key={customer.id}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Link
+                        className="text-foreground font-medium hover:underline"
+                        href={`/crm/customers/${customer.id}`}
+                      >
+                        {customer.companyName}
+                      </Link>
+                      <div className="text-muted-foreground mt-1 text-xs">
+                        {customer.industry}
+                      </div>
                     </div>
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {contact.jobTitle}
+                    <Badge variant="outline">{customer.healthScore}</Badge>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs uppercase">
+                        Pipeline
+                      </p>
+                      <p className="text-foreground mt-1 font-medium">
+                        {formatCurrency(customer.pipelineCents)}
+                      </p>
                     </div>
-                    <div className="text-muted-foreground mt-3 text-sm">
-                      {contact.email}
-                      <br />
-                      {contact.phone}
+                    <div>
+                      <p className="text-muted-foreground text-xs uppercase">
+                        Dokumente
+                      </p>
+                      <p className="text-foreground mt-1 font-medium">
+                        {customer.openDocuments}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
-            <Card className="surface-panel border-border/70 border lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Account Notes</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 lg:grid-cols-3">
-                <div className="border-border/70 bg-background/25 rounded-2xl border p-4">
-                  <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
-                    Renewal Risk
-                  </p>
-                  <p className="text-foreground mt-3 text-2xl font-semibold">
-                    Low
-                  </p>
-                </div>
-                <div className="border-border/70 bg-background/25 rounded-2xl border p-4">
-                  <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
-                    Last Touch
-                  </p>
-                  <p className="text-foreground mt-3 text-2xl font-semibold">
-                    2 Tage
-                  </p>
-                </div>
-                <div className="border-border/70 bg-background/25 rounded-2xl border p-4">
-                  <p className="text-muted-foreground text-xs tracking-[0.22em] uppercase">
-                    Open Documents
-                  </p>
-                  <p className="text-foreground mt-3 text-2xl font-semibold">
-                    3
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          <Card className="surface-panel border-border/70 border">
+            <CardHeader>
+              <CardTitle>Arbeitsmodus</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="border-border/70 bg-background/25 rounded-2xl border p-3">
+                Die Detailakten verbinden Ansprechpartner, Termine, Pipeline und
+                Dokumente pro Kunde in einer Ansicht.
+              </div>
+              <div className="border-border/70 bg-background/25 rounded-2xl border p-3">
+                {canManage
+                  ? "Vertrieb kann neue Kunden, Kontakte und Folgeaktivitaeten direkt aus dem Account anlegen."
+                  : "Viewer erhalten Drill-down und Read-only Einsicht in die gesamte Kundenhistorie."}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
     </div>
   );
 }

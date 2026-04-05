@@ -20,9 +20,15 @@ type DataGridProps<T> = {
   columns: Column<T>[];
   rows: T[];
   emptyState: string;
+  getRowKey?: (row: T, index: number) => string;
 };
 
-export function DataGrid<T>({ columns, rows, emptyState }: DataGridProps<T>) {
+export function DataGrid<T>({
+  columns,
+  rows,
+  emptyState,
+  getRowKey,
+}: DataGridProps<T>) {
   return (
     <div className="border-border/70 bg-card/70 overflow-hidden rounded-xl border">
       <Table>
@@ -47,7 +53,7 @@ export function DataGrid<T>({ columns, rows, emptyState }: DataGridProps<T>) {
             </TableRow>
           ) : (
             rows.map((row, index) => (
-              <TableRow key={index}>
+              <TableRow key={getRowKey ? getRowKey(row, index) : index}>
                 {columns.map((column) => (
                   <TableCell className={column.className} key={column.key}>
                     {column.cell(row)}
