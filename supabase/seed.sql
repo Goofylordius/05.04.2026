@@ -1,0 +1,27 @@
+insert into public.role_permissions (role, permission)
+values
+  ('admin', 'dashboard.view'),
+  ('admin', 'crm.view'),
+  ('admin', 'crm.manage'),
+  ('admin', 'documents.view'),
+  ('admin', 'documents.manage'),
+  ('admin', 'calendar.view'),
+  ('admin', 'calendar.manage'),
+  ('admin', 'company.manage'),
+  ('admin', 'security.manage'),
+  ('admin', 'users.manage'),
+  ('admin', 'audit.view'),
+  ('sales', 'dashboard.view'),
+  ('sales', 'crm.view'),
+  ('sales', 'crm.manage'),
+  ('sales', 'documents.view'),
+  ('sales', 'documents.manage'),
+  ('sales', 'calendar.view'),
+  ('sales', 'calendar.manage'),
+  ('sales', 'security.manage'),
+  ('viewer', 'dashboard.view'),
+  ('viewer', 'crm.view'),
+  ('viewer', 'documents.view'),
+  ('viewer', 'calendar.view'),
+  ('viewer', 'security.manage')
+on conflict do nothing;
